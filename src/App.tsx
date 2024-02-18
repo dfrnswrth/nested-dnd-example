@@ -1,24 +1,25 @@
-import React from 'react';
-import logo from './logo.svg';
+import React, { useState }from 'react';
+import {DndContext, useDraggable, useDroppable, MouseSensor, TouchSensor, PointerSensor, KeyboardSensor, useSensor, useSensors} from '@dnd-kit/core';
+import {CSS} from '@dnd-kit/utilities';
+import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy, } from '@dnd-kit/sortable';
+
 import './App.css';
+
+import { VerticalListView} from './VerticalListView';
+
+// --- Draggable Item
+
+
+// --- Vertical List View Component
+
+
+
+// --- App
 
 function App() {
   return (
     <div className="App">
-      <header className="App-header">
-        <img src={logo} className="App-logo" alt="logo" />
-        <p>
-          Edit <code>src/App.tsx</code> and save to reload.
-        </p>
-        <a
-          className="App-link"
-          href="https://reactjs.org"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Learn React
-        </a>
-      </header>
+      <VerticalListView />
     </div>
   );
 }
