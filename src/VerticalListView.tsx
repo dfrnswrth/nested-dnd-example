@@ -19,6 +19,7 @@ import {
   Active,
   Over,
   MeasuringStrategy,
+  DragCancelEvent,
 } from "@dnd-kit/core";
 
 import {
@@ -130,8 +131,7 @@ const Droppable: React.FC<{ id: string; children?: ReactNode }> = ({
 const SortableItem: React.FC<{
   item: ListItem;
   activeId: string | null;
-  flattenedItems: Record<string, ListItem>;
-}> = ({ item, activeId, flattenedItems }) => {
+}> = ({ item, activeId }) => {
   const { attributes, listeners, setNodeRef, transform, transition } =
     useSortable({ id: item.id });
 
@@ -165,7 +165,7 @@ const SortableItem: React.FC<{
         <SortableContext items={items} strategy={verticalListSortingStrategy}>
           {" "}
           {items.map((item) => (
-            <SortableItem key={item.id} item={item} activeId={activeId} flattenedItems={flattenedItems}/>
+            <SortableItem key={item.id} item={item} activeId={activeId}/>
           ))}
         </SortableContext>
         <div
@@ -184,6 +184,11 @@ const moveItem = (from: number[], to: number[], items: ListItem[]): ListItem[] =
   let data = [...items];
   let itemToMove: ListItem | undefined;
 
+  if (to[0] === from[0]) {
+    console.log('same group', to, from, data)
+    return items;
+  }
+
   if (from[0] < to[0] && from.length < to.length) {
     // If we're moving an item to a lower index, we need to adjust the 'to' index
     // if from.length === 2, we're moving an item from a group, so we're not impacting the top-level shape
@@ -200,11 +205,7 @@ const moveItem = (from: number[], to: number[], items: ListItem[]): ListItem[] =
 
   // If the item to move does not exist, return the original data unmodified
   if (!itemToMove) {
-    return data;
-  }
-  if (to[0] === from[0]) {
-    console.log('same group', to, from)
-    return data;
+    return items;
   }
 
   // Insert item into its new position
@@ -255,7 +256,6 @@ export const VerticalListView: React.FC = () => {
     useSensor(KeyboardSensor)
   );
   const [activeId, setActiveId] = useState<string | null>(null);
-  const [overId, setOverId] = useState<string | null>(null);
 
   const handleDragStart = (event: DragStartEvent) => {
     const { active } = event;
@@ -264,19 +264,23 @@ export const VerticalListView: React.FC = () => {
     setClonedItems(clonedItems);
   };
 
-  const handleDragMove = (event: DragMoveEvent) => {
-    const { over } = event;
-    // console.log(over?.id)
-    setOverId(over?.id as string);
-    // console.log(items.filter(i => i.id === overId)[0]?.type)
-  };
+  const handleDragCancel = (_event: DragCancelEvent) => {
+    if (clonedItems) {
+      setItems(clonedItems);
+    }
+    setClonedItems(null);
+    setActiveId(null);
+  }
 
   const arrangeItems = (items: ListItem[], active: Active, over: Over) => {
+    console.log("\n\nArrange:")
     let fromIndices: number[] = [];
     let toIndices: number[] = []; 
 
     // find departure indeces
     let activeIndex = items.findIndex((item) => item.id === active.id);
+    const activeIsGroup = (active.id as string).startsWith("group");
+    console.log('active index', activeIndex, active, items, activeIsGroup)
     if (activeIndex === -1) {
       // active item is not at the top level
       // so we find it
@@ -286,7 +290,9 @@ export const VerticalListView: React.FC = () => {
         activeIndex = (items[fromGroupIndex] as Group).items.findIndex(
           (item) => item.id === active.id
         );
-        fromIndices = [fromGroupIndex, activeIndex];
+        if (activeIndex !== -1) {
+          fromIndices = [fromGroupIndex, activeIndex];
+        }
       } else {
         console.log("active index not found");
       }
@@ -295,8 +301,13 @@ export const VerticalListView: React.FC = () => {
       fromIndices = [activeIndex];
     }
 
+    if (fromIndices.length === 0) {
+      return items;
+    }
+
     // find destination indixes
     let overIndex = items.findIndex((item) => item.id === over.id);
+    console.log('over index', overIndex, over, items)
     if (overIndex === -1) {
       // over item is not at the top-level
       // so we find a suitable parent item
@@ -308,18 +319,23 @@ export const VerticalListView: React.FC = () => {
         // over item is in a group - so we treat the group like any other top-level item
         toIndices = [parentGroupIndex];
       } else {
-        // over item is a group drop target so add the item to the group
-        let groupId = (over.id as string).slice(13);
-        let groupIndex = items.findIndex((item) => item.id === groupId);
-        let itemIndex = (items[groupIndex] as Group).items.length;
-        toIndices = [groupIndex, itemIndex];
+        if (!activeIsGroup) {
+          // over item is a group drop target so add the item to the group
+          let groupId = (over.id as string).slice(13);
+          let groupIndex = items.findIndex((item) => item.id === groupId);
+          let itemIndex = (items[groupIndex] as Group).items.length;
+          toIndices = [groupIndex, itemIndex];
+        }
       }
     } else {
       // over item is at the top level
       toIndices = [overIndex];
     }
 
-    console.log("from", fromIndices, "to", toIndices);
+    console.log("from", fromIndices, "to", toIndices, items);
+    if (fromIndices.length === 0 || toIndices.length === 0) {
+      return items
+    }
     const newItems = moveItem(fromIndices, toIndices, items);
     return newItems;
   }
@@ -332,8 +348,9 @@ export const VerticalListView: React.FC = () => {
       return;
     }
 
-    console.log('Over', over?.id)
+    console.log('\n\nOver:', over?.id)
     const newItems = arrangeItems(items, active, over);
+    console.log('DO ITEMS', newItems)
     setItems(newItems);
   };
 
@@ -347,13 +364,11 @@ export const VerticalListView: React.FC = () => {
     const newItems = arrangeItems(items, active, over);
     setItems(newItems);
     setActiveId(null);
-    setOverId(null);
+    setClonedItems(null);
   };
 
   useEffect(() => {
-    const newFlattenedItems = computeFlattenedItems(items);
     const newItemsToGroups = computeItemsToGroups(items);
-    setFlattenedItems(newFlattenedItems);
     setItemsToGroups(newItemsToGroups);
   }, [items])
 
@@ -362,21 +377,21 @@ export const VerticalListView: React.FC = () => {
       sensors={sensors}
       collisionDetection={makeCustomCollisionDetection(items, itemsToGroups)}
       onDragStart={handleDragStart}
-      onDragMove={handleDragMove}
       onDragOver={handleDragOver}
       onDragEnd={handleDragEnd}
+      onDragCancel={handleDragCancel}
     >
       <SortableContext items={items} strategy={verticalListSortingStrategy}>
         {items.map((item) => (
-          <SortableItem key={item.id} item={item} activeId={activeId} flattenedItems={flattenedItems}/>
+          <SortableItem
+            key={item.id}
+            item={item}
+            activeId={activeId}
+          />
         ))}
         <DragOverlay>
           {activeId ? (
-            <SortableItem
-              activeId={activeId}
-              flattenedItems={flattenedItems}
-              item={flattenedItems[activeId]}
-            />
+            <SortableItem activeId={activeId} item={flattenedItems[activeId]} />
           ) : null}
         </DragOverlay>
       </SortableContext>
