@@ -1,4 +1,4 @@
-import React, { ReactNode, useEffect, useState } from "react";
+import React, { ReactNode, useEffect, useState, forwardRef } from "react";
 import {
   DndContext,
   closestCenter,
@@ -27,6 +27,8 @@ import {
   verticalListSortingStrategy,
   useSortable,
 } from "@dnd-kit/sortable";
+
+import { moveItem } from "./move";
 
 import { CSS } from "@dnd-kit/utilities";
 
@@ -66,9 +68,9 @@ const makeCustomCollisionDetection =
     // console.log(items, itemsToGroups)
     const { active, collisionRect, droppableRects, droppableContainers } = args;
     let collisions = [];
-    const activeType = (active.id as string).startsWith("group")
-      ? "group"
-      : "item";
+    // const activeType = (active.id as string).startsWith("group")
+    //   ? "group"
+    //   : "item";
     // console.log('active type', activeType)
 
     let groupTargetSeen = false;
@@ -87,7 +89,7 @@ const makeCustomCollisionDetection =
         const intersectionRatio = getIntersectionRatio(rect, collisionRect);
 
         if (0 < intersectionRatio) {
-          if ((id as string).startsWith("group-target")) {
+          if ((id as string).startsWith("DROP_TARGET")) {
             groupTargetSeen = true;
           }
           // console.log("collision detected", intersectionRatio);
@@ -98,28 +100,22 @@ const makeCustomCollisionDetection =
         }
       }
     }
-    if (groupTargetSeen) {
-      collisions = collisions.filter(c => (c.id as string).startsWith("group-target"));
-    }
-    const sortedCollisions = collisions.sort((a, b) => b.data.value - a.data.value);
-    // console.log('sortedCollisions', sortedCollisions)
-    return sortedCollisions
+    // if (groupTargetSeen) {
+    //   collisions = collisions.filter(c => (c.id as string).startsWith("DROP_TARGET"));
+    // }
+    const sortedCollisions = collisions.sort(
+      (a, b) => b.data.value - a.data.value
+    );
+    console.log("sortedCollisions", sortedCollisions);
+    return sortedCollisions;
   };
 
-const Droppable: React.FC<{ id: string; children?: ReactNode }> = ({
-  id,
-  children,
-}) => {
-  const { setNodeRef } = useDroppable({ id: `group-target-${id}` });
-
-  const style = {
-    display: "block",
-    height: "50px",
-    width: "50%",
-    background: "#333",
-    margin: "20px",
-    padding: "10px",
-  };
+const Droppable: React.FC<{
+  id: string;
+  style: Record<string, string | number>;
+  children?: ReactNode;
+}> = ({ id, style, children }) => {
+  const { setNodeRef } = useDroppable({ id: `DROP_TARGET-${id}` });
 
   return (
     <div style={style} ref={setNodeRef}>
@@ -128,6 +124,38 @@ const Droppable: React.FC<{ id: string; children?: ReactNode }> = ({
   );
 };
 
+const PresentationalItem = forwardRef<HTMLDivElement, {item: ListItem, activeId: string}>(({ item, activeId, ...props}, ref) => {
+  const style = {
+    padding: "10px",
+    border: item.type === "item" ? "1px solid #ccc" : "2px solid #000",
+    marginBottom: "5px",
+  };
+
+  if (item.type === "item") {
+    return (
+      <div ref={ref} style={style} {...props}>
+        {item.content}
+        <div style={{ display: "block", width: "20px", height: "20px" }}>H</div>
+      </div>
+    );
+  }
+  const { items } = item;
+  return (
+    <div {...props} ref={ref} style={style}>
+      <div style={{ paddingLeft: "20px" }}>
+          {" "}
+          {items.map((item) => (
+            <PresentationalItem key={item.id} item={item} activeId={activeId} />
+          ))}
+        <div
+          style={{ display: "block", width: "20px", height: "20px" }}
+        >
+          H
+        </div>
+      </div>
+    </div>
+  );
+});
 const SortableItem: React.FC<{
   item: ListItem;
   activeId: string | null;
@@ -161,11 +189,22 @@ const SortableItem: React.FC<{
   return (
     <div ref={setNodeRef} style={style}>
       <div style={{ paddingLeft: "20px" }}>
-        <Droppable id={item.id} />
+        <Droppable
+          id={item.id}
+          style={{
+            display: "block",
+            height: "50px",
+            width: "50%",
+            background: "#333",
+            margin: "20px",
+            padding: "10px",
+          }}
+        />
+
         <SortableContext items={items} strategy={verticalListSortingStrategy}>
           {" "}
           {items.map((item) => (
-            <SortableItem key={item.id} item={item} activeId={activeId}/>
+            <SortableItem key={item.id} item={item} activeId={activeId} />
           ))}
         </SortableContext>
         <div
@@ -180,45 +219,6 @@ const SortableItem: React.FC<{
   );
 };
 
-const moveItem = (from: number[], to: number[], items: ListItem[]): ListItem[] => {
-  let data = [...items];
-  let itemToMove: ListItem | undefined;
-
-  if (to[0] === from[0]) {
-    console.log('same group', to, from, data)
-    return items;
-  }
-
-  if (from[0] < to[0] && from.length < to.length) {
-    // If we're moving an item to a lower index, we need to adjust the 'to' index
-    // if from.length === 2, we're moving an item from a group, so we're not impacting the top-level shape
-    to[0] -= 1;
-  }
-
-  // Extract item from its current position
-  if (from.length === 1) {
-    itemToMove = data.splice(from[0], 1)[0];
-  } else {
-    let group: Group = data[from[0]] as Group;
-    itemToMove = group.items.splice(from[1], 1)[0];
-  }
-
-  // If the item to move does not exist, return the original data unmodified
-  if (!itemToMove) {
-    return items;
-  }
-
-  // Insert item into its new position
-  if (to.length === 1) {
-    data.splice(to[0], 0, itemToMove);
-  } else {
-    let group: Group = data[to[0]] as Group;
-    group.items.splice(to[1], 0, itemToMove as Item); // Assumption: 'to' will not point to a non-existent group
-  }
-
-  return data;
-};
-
 const computeItemsToGroups = (items: ListItem[]) => {
   return items.reduce((acc, item) => {
     if (item.type === "group") {
@@ -228,7 +228,7 @@ const computeItemsToGroups = (items: ListItem[]) => {
     }
     return acc;
   }, {} as Record<string, string>);
-}
+};
 
 const computeFlattenedItems = (items: ListItem[]) => {
   return items.reduce((acc, item) => {
@@ -242,14 +242,17 @@ const computeFlattenedItems = (items: ListItem[]) => {
     }
     return acc;
   }, {} as Record<string, ListItem>);
-}
-
+};
 
 export const VerticalListView: React.FC = () => {
   const [items, setItems] = useState<ListItem[]>(initialData);
   const [clonedItems, setClonedItems] = useState<ListItem[] | null>(null);
-  const [flattenedItems, setFlattenedItems] = useState<Record<string, ListItem>>(computeFlattenedItems(items));
-  const [itemsToGroups, setItemsToGroups] = useState<Record<string, string>>(computeItemsToGroups(items));
+  const [flattenedItems, setFlattenedItems] = useState<
+    Record<string, ListItem>
+  >(computeFlattenedItems(items));
+  const [itemsToGroups, setItemsToGroups] = useState<Record<string, string>>(
+    computeItemsToGroups(items)
+  );
   const sensors = useSensors(
     useSensor(MouseSensor),
     useSensor(TouchSensor),
@@ -260,7 +263,7 @@ export const VerticalListView: React.FC = () => {
   const handleDragStart = (event: DragStartEvent) => {
     const { active } = event;
     setActiveId(active?.id as string);
-    const clonedItems = structuredClone(items)
+    const clonedItems = structuredClone(items);
     setClonedItems(clonedItems);
   };
 
@@ -270,75 +273,179 @@ export const VerticalListView: React.FC = () => {
     }
     setClonedItems(null);
     setActiveId(null);
-  }
+  };
 
-  const arrangeItems = (items: ListItem[], active: Active, over: Over) => {
-    console.log("\n\nArrange:")
-    let fromIndices: number[] = [];
-    let toIndices: number[] = []; 
-
-    // find departure indeces
-    let activeIndex = items.findIndex((item) => item.id === active.id);
-    const activeIsGroup = (active.id as string).startsWith("group");
-    console.log('active index', activeIndex, active, items, activeIsGroup)
+  const getActiveIndex = (activeId: string): number[] => {
+    let indices: number[] = [];
+    let activeIndex = items.findIndex((item) => item.id === activeId);
     if (activeIndex === -1) {
       // active item is not at the top level
       // so we find it
-      const groupId = itemsToGroups[active.id];
+      const groupId = itemsToGroups[activeId];
       if (groupId) {
         let fromGroupIndex = items.findIndex((item) => item.id === groupId);
         activeIndex = (items[fromGroupIndex] as Group).items.findIndex(
-          (item) => item.id === active.id
+          (item) => item.id === activeId
         );
         if (activeIndex !== -1) {
-          fromIndices = [fromGroupIndex, activeIndex];
+          indices = [activeIndex];
         }
       } else {
         console.log("active index not found");
       }
     } else {
       // active item is at the top level
-      fromIndices = [activeIndex];
+      indices = [activeIndex];
+    }
+    console.log('ACTIVE INDEX', indices)
+    return indices;
+  }
+
+  const getOverIndex = (overId: string): number[] => {
+    // find destination indixes
+    let overIndex: number;
+
+    if (overId.startsWith("DROP_TARGET")) {
+      // special cases
+      let tempOverId = (overId).slice(12);
+      console.log('temp over id', tempOverId)
+      if (tempOverId === "TOP" || tempOverId === "BOTTOM") {
+        overIndex = tempOverId === "TOP" ? 0 : items.length;
+        return [overIndex];
+      } else {
+        // tempOverId === "groupN"
+        overIndex = items.findIndex((item) => item.id === tempOverId);
+        if (overIndex === -1) {
+          console.log("groups should always be top-level, so this should never happen")
+          debugger;
+        }
+        const itemLength = (items[overIndex] as Group).items?.length || 0;
+        // this is the only case where we return two indices
+        return [overIndex, itemLength];
+      }
     }
 
+    overIndex = items.findIndex((item) => item.id === overId);
+    if (overIndex === -1) {
+      let parentGroupId = itemsToGroups[overId];
+      if (!parentGroupId) {
+        console.log("groups should always be top-level, so this should never happen")
+        debugger;
+      }
+      let parentGroupIndex = items.findIndex((item) => item.id === parentGroupId);
+      if (parentGroupIndex === -1) {
+        console.log("groups should always be top-level, so this should never happen")
+        debugger;
+      }
+      return [parentGroupIndex];
+    }
+    return [overIndex];
+
+
+    // // console.log("over index", overIndex, over, items, overGroupDropTarget);
+    // if (overBoundaryTarget) {
+    //   toIndices = [overIndex];
+    //   // console.log('IN BOUNDARY')
+    // } else {
+    //   if (overIndex === -1) {
+    //     let parentGroupId = itemsToGroups[over.id];
+    //     let parentGroupIndex = items.findIndex(
+    //       (item) => item.id === parentGroupId
+    //     );
+    //     if (parentGroupIndex !== -1) {
+    //       // we're over a group member
+    //       overIndex = parentGroupIndex;
+    //     }
+    //   }
+    //   if (overIndex !== -1) {
+    //     toIndices = [overIndex];
+    //     if (overGroupDropTarget) {
+    //       let itemLength = (items[overIndex] as Group).items?.length || 0;
+    //       let itemIndex = itemLength;
+    //       toIndices.push(itemIndex);
+    //     }
+    //   } else {
+    //     debugger;
+    //   }
+    //   // console.log("\n\nDFG", draggingFromGroup, fromIndices, toIndices, items);
+    //   if (draggingFromGroup && fromIndices[0] === toIndices[0]) {
+    //     // console.log("condition met");
+    //     toIndices = [toIndices[0]++];
+    //   }
+
+    // }
+  }
+
+  const arrangeItems = (items: ListItem[], active: Active, over: Over) => {
+    console.log("\n\nArrange:");
+    let fromIndices: number[] = [];
+    let toIndices: number[] = [];
+
+    const activeId = active.id.toString();
+    const overId = over.id.toString();
+
+    fromIndices = getActiveIndex(activeId);
     if (fromIndices.length === 0) {
       return items;
     }
 
-    // find destination indixes
-    let overIndex = items.findIndex((item) => item.id === over.id);
-    console.log('over index', overIndex, over, items)
-    if (overIndex === -1) {
-      // over item is not at the top-level
-      // so we find a suitable parent item
-      // check if over is an item in a group
-      let parentGroupId = itemsToGroups[over.id];
-      let parentGroupIndex = items.findIndex((item) => item.id === parentGroupId);
+    toIndices = getOverIndex(overId);
 
-      if (parentGroupIndex !== -1) {
-        // over item is in a group - so we treat the group like any other top-level item
-        toIndices = [parentGroupIndex];
-      } else {
-        if (!activeIsGroup) {
-          // over item is a group drop target so add the item to the group
-          let groupId = (over.id as string).slice(13);
-          let groupIndex = items.findIndex((item) => item.id === groupId);
-          let itemIndex = (items[groupIndex] as Group).items.length;
-          toIndices = [groupIndex, itemIndex];
-        }
+    const activeType = activeId.startsWith("group") ? "group" : "item";
+    let overType: "group" | "item" | "boundary" = "item";
+    if (overId.startsWith("DROP_TARGET")) {
+      const tId = overId.slice(12);
+      if (tId === "TOP" || tId === "BOTTOM") {
+        overType = "boundary";
+      }
+      if (tId.startsWith("group")) {
+        overType = "group";
       }
     } else {
-      // over item is at the top level
-      toIndices = [overIndex];
+      overType = itemsToGroups[overId] ? "group" : "item";
     }
 
-    console.log("from", fromIndices, "to", toIndices, items);
-    if (fromIndices.length === 0 || toIndices.length === 0) {
-      return items
+    if (activeType === "group" && overType === "group") {
+      return items;
     }
+
+
+    // if (overIndex === -1) {
+    //   debugger;
+    //   console.log('over nested item', over.id)
+    //   // // over item is not at the top-level
+    //   // // so we find a suitable parent item
+    //   // // check if over is an item in a group
+    //   // let parentGroupId = itemsToGroups[over.id];
+    //   // let parentGroupIndex = items.findIndex((item) => item.id === parentGroupId);
+
+    //   // if (parentGroupIndex !== -1) {
+    //   //   // over item is in a group - so we treat the group like any other top-level item
+    //   //   toIndices = [parentGroupIndex];
+    //   // } else {
+    //   //   if (!activeIsGroup) {
+    //   //     // over item is a group drop target so add the item to the group
+    //   //     let groupId = (over.id as string).slice(12);
+    //   //     console.log('group id', groupId)
+    //   //     let groupIndex = items.findIndex((item) => item.id === groupId);
+    //   //     let itemIndex = (items[groupIndex] as Group).items.length;
+    //   //     toIndices = [groupIndex, itemIndex];
+    //   //   }
+    //   // }
+    // } else {
+    //   // over item is at the top level
+    //   toIndices = [overIndex];
+    // }
+
+    console.log("from", fromIndices);
+    console.log("to", toIndices);
+    console.log("items", items);
+    // if (fromIndices.length === 0 || toIndices.length === 0) {
+    //   return items;
+    // }
     const newItems = moveItem(fromIndices, toIndices, items);
     return newItems;
-  }
+  };
 
   const handleDragOver = (event: DragOverEvent) => {
     const { active, over } = event;
@@ -348,9 +455,9 @@ export const VerticalListView: React.FC = () => {
       return;
     }
 
-    console.log('\n\nOver:', over?.id)
+    console.log("\n\nOver:", over?.id);
     const newItems = arrangeItems(items, active, over);
-    console.log('DO ITEMS', newItems)
+    console.log("DO ITEMS", JSON.stringify(newItems));
     setItems(newItems);
   };
 
@@ -361,6 +468,7 @@ export const VerticalListView: React.FC = () => {
     if (!active || !over) {
       return;
     }
+    console.log("\n\nEnd:", active?.id, over?.id);
     const newItems = arrangeItems(items, active, over);
     setItems(newItems);
     setActiveId(null);
@@ -370,7 +478,12 @@ export const VerticalListView: React.FC = () => {
   useEffect(() => {
     const newItemsToGroups = computeItemsToGroups(items);
     setItemsToGroups(newItemsToGroups);
-  }, [items])
+  }, [items]);
+
+  console.log(
+    "RENDER ITEMS",
+    items.map((i) => i.id)
+  );
 
   return (
     <DndContext
@@ -381,20 +494,38 @@ export const VerticalListView: React.FC = () => {
       onDragEnd={handleDragEnd}
       onDragCancel={handleDragCancel}
     >
+      <Droppable
+        id={`TOP`}
+        style={{
+          width: "100%",
+          height: "10px",
+          opacity: 0,
+        }}
+        />
       <SortableContext items={items} strategy={verticalListSortingStrategy}>
         {items.map((item) => (
-          <SortableItem
-            key={item.id}
-            item={item}
-            activeId={activeId}
-          />
+          <SortableItem key={item.id} item={item} activeId={activeId} />
         ))}
         <DragOverlay>
-          {activeId ? (
-            <SortableItem activeId={activeId} item={flattenedItems[activeId]} />
-          ) : null}
+          {
+            // render the overlay outside
+            activeId ? (
+              <PresentationalItem
+                activeId={activeId}
+                item={flattenedItems[activeId]}
+              />
+            ) : null
+          }
         </DragOverlay>
       </SortableContext>
+      <Droppable
+        id={`BOTTOM`}
+        style={{
+          width: "100%",
+          height: "10px",
+          opacity: 0,
+        }}
+        />
     </DndContext>
   );
 };
