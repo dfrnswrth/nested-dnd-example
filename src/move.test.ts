@@ -13,6 +13,13 @@ describe("moveItem", () => {
     // @ts-ignore
     expect(result[3].items[1].id).toBe('item4')
   });
+  it('moves an top-level item to a group', () => {
+    const result = moveItem([1], [2,1], initialData);
+    // @ts-ignore
+    expect(result[1].items[1].id).toBe('item2')
+    // // @ts-ignore
+    // expect(result[3].items[1].id).toBe('item4')
+  });
 
 
 })

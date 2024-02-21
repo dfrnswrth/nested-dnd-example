@@ -485,6 +485,7 @@ export const VerticalListView: React.FC = () => {
     items.map((i) => i.id)
   );
 
+
   return (
     <DndContext
       sensors={sensors}
@@ -493,6 +494,17 @@ export const VerticalListView: React.FC = () => {
       onDragOver={handleDragOver}
       onDragEnd={handleDragEnd}
       onDragCancel={handleDragCancel}
+      measuring={{
+        droppable: {
+          strategy: MeasuringStrategy.Always,
+        },
+        // draggable: {
+        //   strategy: MeasuringStrategy.Always,
+        // },
+        // dragOverlay: {
+        //   strategy: MeasuringStrategy.Always,
+        // },
+      }}
     >
       <Droppable
         id={`TOP`}
